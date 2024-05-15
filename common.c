@@ -35,7 +35,7 @@ int addrparse(const char *addrstr, const char *portstr, struct sockaddr_storage 
     }
 
     struct in6_addr inaddr6; //128 bits ipv6 address (ipv6)
-    if(inet_pton(AF_INET6, addrstr, &inadd1024r6)) { 
+    if(inet_pton(AF_INET6, addrstr, &inaddr6)) { 
         // tentativa de parser de ipv6 (indicado pelo AF_INET), parser do addstr e, se der certo, joga no inaddr6
         // se o parser der certo, o protocolo é ipv6. Mas, para inicializar o struct sockaddr_storage storage, deve-se converte-lo para sockaddr_in (que é o struct sockaddr da internet)
 

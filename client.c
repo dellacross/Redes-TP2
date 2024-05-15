@@ -9,7 +9,12 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#define BUFSZ 1024 //buff size
+#define BUFSZ 500 //buff size
+
+#define ERROR01 "Client limit exceeded"
+#define OK01 "Successful disconnect"
+#define REQ_ADD "REQ_ADD"
+#define RES_ADD "RES_ADD"
 
 void usage(int argc, char **argv) {
     printf("usage: %s <server IP> <server port>\n", argv[0]);
@@ -23,7 +28,7 @@ int valid_class_identifier(char *sala_id_s) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) usage(argc, argv);
+    if (argc < 4) usage(argc, argv);
 
     // o connect recebe um ponteiro para a struct sockaddr
     struct sockaddr_storage storage;
@@ -37,42 +42,53 @@ int main(int argc, char **argv) {
 
     if(connect(_socket, addr, sizeof(storage)) != 0) logexit("connect"); //addr -> endereco do servidor
 
-    char addrstr[BUFSZ];
-    addrtostr(addr, addrstr, BUFSZ);
-
-    printf("conntected to %s\n", addrstr);
-
-    // cliente manda uma mensagem (linha 43 a 49)
-    char buf[BUFSZ];
-    char *mss;
-    memset(buf, 0, BUFSZ); //inicializa o buffer como 0
-
-    printf("mensagem: ");
-    fgets(buf, BUFSZ-1, stdin); //le do teclado o que o user vai digitar
-
     size_t count;
+    char buf[BUFSZ];
+    char mss[BUFSZ];
 
-    //size_t count = send(_socket, buf, strlen(buf)+1, 0); //(socket, buffer, tamanho da mensagem)
-    // count -> nmr de bytes efetivamente transmitidos na rede
-    if(count != (strlen(mss)+1)) logexit("exit"); // se o nmr de bytes for diferente do que foi pedido para se transmitir (strlen(buf)+1)
+    count = recv(_socket, buf, BUFSZ, 0);
 
-    // cliente recebe uma resposta (linha 51 a 62)
-    memset(buf, 0, BUFSZ); //inicializa o buffer como 0
+    printf("%ld - %s\n", count, buf);
 
-    // o recv recebe o dado, mas o servidor pode mandar o dado parcelas pequenas, logo, deve-se receber até o count == 0. Com isso, deve-se criar uma variavel (total) que armazena o total de dados recebidos até o momento, mas sempre colocar o dado no local correto do buffer (buff)
+    if(strncmp(buf, ERROR01, strlen(ERROR01)+1) == 0) {
+        printf("%s", ERROR01);
+    } else {
+        char addrstr[BUFSZ];
+        addrtostr(addr, addrstr, BUFSZ);
 
-    unsigned total = 0;
-    while(1) { // recebe x bytes por vezes e coloca em ordem no buffer (buff) até o recv retornar 0 (servidor terminou de mandar os dados)
-        count = recv(_socket, buf + total, BUFSZ - total, 0); //recebe a resposta do servidor (recebe o dado no socket, coloca-o no buf e limita o tamanho do dado em BUFFSZ)
+        printf("conntected to %s\n", addrstr);
 
-        if(count == 0) break; // não recebeu nada (só ocorre qnd a conexão está fechada) - conexão finalizada
+        count = send(_socket, REQ_ADD, strlen(REQ_ADD)+1, 0);
 
-        total+=count;                                           
+        if(count != 0) {
+            recv(_socket, buf, BUFSZ, 0);
+
+            int id;
+
+            sscanf(buf, "RES_ADD(%d)", &id);
+
+            printf("Servidor new ID: %d\n", id);
+        }
+
+        while(1) {
+            memset(buf, 0, BUFSZ); //inicializa o buffer como 0
+            memset(mss, 0, BUFSZ);
+
+            printf("mensagem: ");
+            fgets(buf, BUFSZ-1, stdin); //le do teclado o que o user vai digitar
+
+            // count -> nmr de bytes efetivamente transmitidos na rede
+            if(count != (strlen(mss)+1)) logexit("exit"); // se o nmr de bytes for diferente do que foi pedido para se transmitir (strlen(buf)+1)
+
+            // cliente recebe uma resposta (linha 51 a 62)
+            memset(buf, 0, BUFSZ); //inicializa o buffer como 0
+
+            if(count != 0) {
+                recv(_socket, buf, BUFSZ, 0);
+                printf("%s", buf);
+            }
+        }
     }
+
     close(_socket);
-
-    printf("received %u bytes\n", total);
-    puts(buf);
-
-    exit(EXIT_SUCCESS);
 }
