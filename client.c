@@ -22,53 +22,82 @@ void usage(int argc, char **argv) {
     exit(EXIT_FAILURE);
 }
 
-int valid_class_identifier(char *sala_id_s) {
-    int sala_id = atoi(sala_id_s);
-    return sala_id >= 0 && sala_id <= 7;
+int initialConnection(int _socket, int sid) {
+    char msg[BUFSZ];
+    size_t count;
+    int cid;
+    count = send(_socket, REQ_ADD, strlen(REQ_ADD)+1, 0);
+
+    if(count != 0) {
+        recv(_socket, msg, BUFSZ, 0);
+
+        sscanf(msg, "RES_ADD(%d)", &cid);
+
+        if(sid == 0) printf("Servidor SE new ID: %d\n", cid);
+        if(sid == 1) printf("Servidor SCII new ID: %d\n", cid);
+    }
+
+    return cid;
+}
+
+void handleComunication(int _socket, char* mss, int id) {
+    size_t count;
+    count = send(_socket, mss, strlen(mss)+1, 0);
+    printf("id: %d\n", id);
+    char res[BUFSZ];
+    memset(res, 0, BUFSZ);
+    if(count != 0) {
+        recv(_socket, res, BUFSZ, 0);
+        printf("return: %s\n", res);
+    }
 }
 
 int main(int argc, char **argv) {
     if (argc < 4) usage(argc, argv);
 
-    // o connect recebe um ponteiro para a struct sockaddr
-    struct sockaddr_storage storage;
-    if(addrparse(argv[1], argv[2], &storage) != 0) usage(argc, argv); // argv[1] -> endereco do servidor | argv[2] -> porto que recebeu | ponteiro para o storage 
+    // Connect to first server
+    struct sockaddr_storage storage1;
+    if(addrparse(argv[1], argv[2], &storage1) != 0) usage(argc, argv);
 
-    int _socket;
-    _socket = socket(storage.ss_family, SOCK_STREAM, 0); //storage.ss_family -> tipo do protocolo (ipv4 | ipv6) | SOCK_STREAM -> SOCKET TCP
-    if(_socket == -1) logexit("socket");
+    int _socket1;
+    _socket1 = socket(storage1.ss_family, SOCK_STREAM, 0);
+    if(_socket1 == -1) logexit("socket");
 
-    struct sockaddr *addr = (struct sockaddr *)(&storage); //pega o ponteiro para o storage, converte para o tipo do ponteiro *addr (sockaddr) e joga para a variavel addr, para depois passar para o connect
+    struct sockaddr *addr1 = (struct sockaddr *)(&storage1);
 
-    if(connect(_socket, addr, sizeof(storage)) != 0) logexit("connect"); //addr -> endereco do servidor
+    if(connect(_socket1, addr1, sizeof(storage1)) != 0) logexit("connect");
 
-    size_t count;
+    // Connect to second server
+    struct sockaddr_storage storage2;
+    if(addrparse(argv[1], argv[3], &storage2) != 0) usage(argc, argv);
+
+    int _socket2;
+    _socket2 = socket(storage2.ss_family, SOCK_STREAM, 0);
+    if(_socket2 == -1) logexit("socket");
+
+    struct sockaddr *addr2 = (struct sockaddr *)(&storage2);
+
+    if(connect(_socket2, addr2, sizeof(storage2)) != 0) logexit("connect");
+
     char buf[BUFSZ];
     char mss[BUFSZ];
 
-    count = recv(_socket, buf, BUFSZ, 0);
-
-    printf("%ld - %s\n", count, buf);
+    recv(_socket1, buf, BUFSZ, 0);
 
     if(strncmp(buf, ERROR01, strlen(ERROR01)+1) == 0) {
         printf("%s", ERROR01);
     } else {
-        char addrstr[BUFSZ];
-        addrtostr(addr, addrstr, BUFSZ);
+        char addrstr1[BUFSZ];
+        char addrstr2[BUFSZ];
+        addrtostr(addr1, addrstr1, BUFSZ);
+        addrtostr(addr2, addrstr2, BUFSZ);
+        printf("conntected to %s\n", addrstr1);
+        printf("conntected to %s\n", addrstr2);
 
-        printf("conntected to %s\n", addrstr);
+        int cid;
 
-        count = send(_socket, REQ_ADD, strlen(REQ_ADD)+1, 0);
-
-        if(count != 0) {
-            recv(_socket, buf, BUFSZ, 0);
-
-            int id;
-
-            sscanf(buf, "RES_ADD(%d)", &id);
-
-            printf("Servidor new ID: %d\n", id);
-        }
+        cid = initialConnection(_socket1, 0);
+        cid = initialConnection(_socket2, 1);
 
         while(1) {
             memset(buf, 0, BUFSZ); //inicializa o buffer como 0
@@ -77,18 +106,25 @@ int main(int argc, char **argv) {
             printf("mensagem: ");
             fgets(buf, BUFSZ-1, stdin); //le do teclado o que o user vai digitar
 
-            // count -> nmr de bytes efetivamente transmitidos na rede
-            if(count != (strlen(mss)+1)) logexit("exit"); // se o nmr de bytes for diferente do que foi pedido para se transmitir (strlen(buf)+1)
+            int msgID = -1; // identificador para indicar para qual servidor a msg deve ser enviada
 
-            // cliente recebe uma resposta (linha 51 a 62)
-            memset(buf, 0, BUFSZ); //inicializa o buffer como 0
-
-            if(count != 0) {
-                recv(_socket, buf, BUFSZ, 0);
-                printf("%s", buf);
+            if(strncmp(buf, "kill", strlen("kill")) == 0) {
+                sprintf(mss, "REQ_REM(%d)", cid);
+                msgID = 2;
+            } else {
+                printf("outra msg\n");
+                break;
             }
+
+            printf("msg enviada: %s\n", mss);
+
+            if(msgID == 0 || msgID == 2) handleComunication(_socket1, mss, 1);
+            if(msgID == 1 || msgID == 2) handleComunication(_socket2, mss, 2);
+
+            memset(mss, 0, BUFSZ); //inicializa o buffer como 0
         }
     }
 
-    close(_socket);
+    close(_socket1);
+    close(_socket2);
 }
