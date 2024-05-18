@@ -55,7 +55,7 @@ int initialConnection(int _socketSE, int _socketSCII) {
         return -1;
     } else {
         sscanf(buf, "RES_ADD(%d)", &cid);
-        printf("Servidor new ID: %d\n", cid);
+        printf("Servidor SE new ID: %d\n", cid);
     }
 
     memset(buf, 0, BUFSZ);
@@ -66,7 +66,7 @@ int initialConnection(int _socketSE, int _socketSCII) {
     if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
         printf("Client limit exceeded\n");
         return -1;
-    } else printf("Servidor new ID: %d\n", cid);
+    } else printf("Servidor SCII new ID: %d\n", cid);
 
     return cid;
 }
@@ -95,6 +95,8 @@ int parse_rcv_message(char* buf, int _socketSCII, int cid) {
     } else if(strncmp(buf, RES_STATUS, strlen(RES_STATUS)) == 0) {
         sscanf(buf, "RES_STATUS %s", word1);
 
+        printf("Estado atual: %s\n", word1);
+
         if(strncmp(word1, "alta", strlen("alta")) == 0) sprintf(mss, "%s", REQ_UP);
         else if(strncmp(word1, "moderada", strlen("moderada")) == 0) sprintf(mss, "%s", REQ_NONE);
         else if(strncmp(word1, "baixa", strlen("baixa")) == 0) sprintf(mss, "%s", REQ_DOWN);
@@ -120,7 +122,7 @@ int parse_rcv_message(char* buf, int _socketSCII, int cid) {
         printf("%s\n", mss);
     } else if(strncmp(buf, OK01, strlen(OK01)) == 0) {
         toClose = 1;
-        printf("Servidor Client %d removed\n", cid);
+        printf("Successful disconnect\n");
     } else if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
         toClose = 1;
         printf("Client limit exceeded\n");
@@ -230,7 +232,6 @@ int main(int argc, char **argv) {
         fgets(buf, BUFSZ - 1, stdin);
         
         /*
-
         if (FD_ISSET(socket_SE, &read_fds)) {
             count = parse_send_message(socket_SE, buf, cid);
             printf("SE\n");

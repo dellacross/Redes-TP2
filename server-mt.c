@@ -42,6 +42,7 @@
 #define SE_SERVER "SE"
 #define SCII_SERVER "SCII"
 
+int client_count = 0; // Contador de clientes conectados
 int clients[10] = {0};
 
 int production = -1;
@@ -105,11 +106,13 @@ size_t parce_rcv_message(char *buf, struct client_data *cdata) {
             sprintf(mss, "%s(%d)", RES_ADD, client_id);
             printf("Client %d added\n", client_id);
         }
+
     } else if(strncmp(buf, REQ_REM, strlen(REQ_REM)) == 0) {
         sscanf(buf, "REQ_REM(%d)", &value1);
         if(clients[value1-1] == 0) sprintf(mss, "%s", "ERROR(02)");
         else {
             clients[value1-1] = 0;
+            client_count--;
             sprintf(mss, "%s", "OK(01)");
             printf("Servidor Client %d removed\n", value1);
             toClose = 1;
@@ -229,6 +232,7 @@ int main(int argc, char **argv) {
         char mss[BUFSZ];
         memset(mss, 0, BUFSZ);
 
+        printf("client count: %d\n", client_count);
         struct client_data *cdata = malloc(sizeof(*cdata));
         
         cdata->csock = csock;
