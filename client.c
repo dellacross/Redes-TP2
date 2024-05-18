@@ -42,62 +42,47 @@ void usage(int argc, char **argv) {
     exit(EXIT_FAILURE);
 }
 
-int initialConnection(int _socket) {
+int initialConnection(int _socketSE, int _socketSCII) {
     char buf[BUFSZ];
     memset(buf, 0, BUFSZ);
-    size_t count;
-    int cid;
+    int cid = -1;
 
-    count = send(_socket, REQ_ADD, strlen(REQ_ADD) + 1, 0);
+    send(_socketSE, REQ_ADD, strlen(REQ_ADD) + 1, 0);
+    recv(_socketSE, buf, BUFSZ, 0);
 
-    if (count != 0) {
-        recv(_socket, buf, BUFSZ, 0);
-        if(strcmp(buf, ERROR01) == 0) {
-            printf("Client limit exceeded\n");
-            close(_socket);
-            return -1;
-        } else {
-            sscanf(buf, "RES_ADD(%d)", &cid);
-            printf("Servidor new ID: %d\n", cid);
-        }
+    if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
+        printf("Client limit exceeded\n");
+        return -1;
+    } else {
+        sscanf(buf, "RES_ADD(%d)", &cid);
+        printf("Servidor new ID: %d\n", cid);
     }
+
+    memset(buf, 0, BUFSZ);
+
+    send(_socketSCII, REQ_ADD, strlen(REQ_ADD) + 1, 0);
+    recv(_socketSCII, buf, BUFSZ, 0);
+
+    if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
+        printf("Client limit exceeded\n");
+        return -1;
+    } else printf("Servidor new ID: %d\n", cid);
 
     return cid;
 }
 
-size_t parse_send_message(int _socket, char* buf, int cid) {
+int parse_send_message(int _socketSE, int _socketSCII, char* buf, int cid);
+
+int parse_rcv_message(char* buf, int _socketSCII, int cid) {
     char mss[BUFSZ];
-    memset(mss, 0, BUFSZ);
-    size_t count;
-
-    printf("buf: %s\n", buf);
-
-    if(strcmp(buf, KILL) == 0) sprintf(mss, "REQ_REM(%d)", cid);
-    else if(strncmp(buf, "display info se", strlen("display info sce")) == 0) sprintf(mss, "%s", REQ_INFOSE);
-    else if(strncmp(buf, "display info scii", strlen("display info scii")) == 0) sprintf(mss, "%s", REQ_INFOSCII);
-    else if(strncmp(buf, "query condition", strlen("query condition")) == 0) sprintf(mss, "%s", REQ_STATUS);
-    else if(strncmp(buf, REQ_UP, strlen(REQ_UP)) == 0) sprintf(mss, "%s", REQ_UP);
-    else if(strncmp(buf, REQ_NONE, strlen(REQ_NONE)) == 0) sprintf(mss, "%s", REQ_NONE);
-    else if(strncmp(buf, REQ_DOWN, strlen(REQ_DOWN)) == 0) sprintf(mss, "%s", REQ_DOWN);
-    else printf("send outra msg\n");
-
-    printf("mss: %s\n", mss);
-    count = send(_socket, mss, strlen(mss) + 1, 0);
-
-    return count;
-}
-
-void parse_rcv_message(int _socket, int cid) {
-    char buf[BUFSZ];
-    char mss[BUFSZ];
-    memset(buf, 0, BUFSZ);
     memset(mss, 0, BUFSZ);
 
     int value1, value2;
     char word1[BUFSZ];
-    size_t count = recv(_socket, buf, BUFSZ, 0);
 
-    printf("buf: %s - %ld\n", buf, count);
+    int toClose = 0;
+
+    //printf("rcv_msg: %s\n", buf);
 
     if(strncmp(buf, RES_INFOSE, strlen(RES_INFOSE)) == 0) {
         sscanf(buf, "RES_INFOSE %d", &value1);
@@ -110,15 +95,11 @@ void parse_rcv_message(int _socket, int cid) {
     } else if(strncmp(buf, RES_STATUS, strlen(RES_STATUS)) == 0) {
         sscanf(buf, "RES_STATUS %s", word1);
 
-        if(strcmp(word1, "alta") == 0) {
-            sprintf(mss, "%s", REQ_UP);
-            count = parse_send_message(_socket, mss, cid);
-            if(count != 0) parse_rcv_message(_socket, cid);
-            else {
-                logexit("alta");
-                close(_socket);
-            }
-        }
+        if(strncmp(word1, "alta", strlen("alta")) == 0) sprintf(mss, "%s", REQ_UP);
+        else if(strncmp(word1, "moderada", strlen("moderada")) == 0) sprintf(mss, "%s", REQ_NONE);
+        else if(strncmp(word1, "baixa", strlen("baixa")) == 0) sprintf(mss, "%s", REQ_DOWN);
+
+        parse_send_message(0, _socketSCII, mss, cid);
     } else if(strncmp(buf, RES_UP, strlen(RES_UP)) == 0) {
         sscanf(buf, "RES_UP %d %d", &value1, &value2);
         sprintf(mss, "Consumo antigo: %d", value1);
@@ -131,15 +112,84 @@ void parse_rcv_message(int _socket, int cid) {
         sprintf(mss, "Consumo antigo: %d", value1);
         printf("%s\n", mss);
     } else if(strncmp(buf, RES_DOWN, strlen(RES_DOWN)) == 0) {
-        sscanf(buf, "DOWN %d %d", &value1, &value2);
+        sscanf(buf, "RES_DOWN %d %d", &value1, &value2);
         sprintf(mss, "Consumo antigo: %d", value1);
         printf("%s\n", mss);
         memset(mss, 0, BUFSZ);
         sprintf(mss, "Consumo atual: %d", value2);
         printf("%s\n", mss);
-    } else {
-        printf("rcv outra msg\n");
+    } else if(strncmp(buf, OK01, strlen(OK01)) == 0) {
+        toClose = 1;
+        printf("Servidor Client %d removed\n", cid);
+    } else if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
+        toClose = 1;
+        printf("Client limit exceeded\n");
+    } else if(strncmp(buf, ERROR02, strlen(ERROR02)) == 0) {
+        toClose = 1;
+        printf("Client not found\n");
     }
+
+    return toClose;
+}
+
+int parse_send_message(int _socketSE, int _socketSCII, char* buf, int cid) {
+    char mss[BUFSZ];
+    memset(mss, 0, BUFSZ);
+    int sid = -1;
+
+    int toClose = 0;
+
+    //printf("send buf: %s\n", buf);
+
+    if(strncmp(buf, KILL, strlen(KILL)) == 0) {
+        sprintf(mss, "REQ_REM(%d)", cid);
+        sid = 2;
+    }
+    else if(strncmp(buf, "display info se", strlen("display info se")) == 0) {
+        sprintf(mss, "%s", REQ_INFOSE);
+        sid = 0;
+    }
+    else if(strncmp(buf, "display info scii", strlen("display info scii")) == 0) {
+        sprintf(mss, "%s", REQ_INFOSCII);
+        sid = 1;
+    }
+    else if(strncmp(buf, "query condition", strlen("query condition")) == 0) {
+        sprintf(mss, "%s", REQ_STATUS);
+        sid = 0;
+    }
+    else if(strncmp(buf, REQ_UP, strlen(REQ_UP)) == 0) {
+        sprintf(mss, "%s", REQ_UP);
+        sid = 1;
+    }
+    else if(strncmp(buf, REQ_NONE, strlen(REQ_NONE)) == 0){ 
+        sprintf(mss, "%s", REQ_NONE);
+        sid = 1;
+    }
+    else if(strncmp(buf, REQ_DOWN, strlen(REQ_DOWN)) == 0) {
+        sprintf(mss, "%s", REQ_DOWN);
+        sid = 1;
+    }
+
+    //printf("mss: %s - %d\n", mss, sid);
+
+    char rcv_mss[BUFSZ];
+    memset(rcv_mss, 0, BUFSZ);
+    
+    if(sid == 0 || sid == 2) {
+        send(_socketSE, mss, strlen(mss) + 1, 0);
+        recv(_socketSE, rcv_mss, BUFSZ, 0);
+        toClose = parse_rcv_message(rcv_mss, _socketSCII, cid);
+    }
+
+    memset(rcv_mss, 0, BUFSZ);
+
+    if(sid == 1 || sid == 2) {
+        send(_socketSCII, mss, strlen(mss) + 1, 0);
+        recv(_socketSCII, rcv_mss, BUFSZ, 0);
+        toClose = parse_rcv_message(rcv_mss, _socketSCII, cid);
+    } 
+
+    return toClose;
 }
 
 int main(int argc, char **argv) {
@@ -158,29 +208,29 @@ int main(int argc, char **argv) {
     struct sockaddr *addr_SCII = (struct sockaddr *)(&storage_SCII);
     if (connect(socket_SCII, addr_SCII, sizeof(storage_SCII)) != 0) logexit("connect");
 
-    fd_set read_fds;
-    int cid;
-    cid = initialConnection(socket_SE);
-    if(cid != -1) cid = initialConnection(socket_SCII);
+    //fd_set read_fds;
+    int cid = initialConnection(socket_SE, socket_SCII);
+
+    int toClose = 0;
 
     while (cid != -1) {
+        /*
         FD_ZERO(&read_fds);
         FD_SET(socket_SE, &read_fds);
         FD_SET(socket_SCII, &read_fds);
-        printf("socket_SE: %d | socket_SCII: %d\n", socket_SE, socket_SCII);
         int max_fd = socket_SE > socket_SCII ? socket_SE : socket_SCII;
-        printf("max_fd: %d\n", max_fd);
 
         select(max_fd + 1, &read_fds, NULL, NULL, NULL);
+        */
 
         char buf[BUFSZ];
         memset(buf, 0, BUFSZ);
 
         printf("mensagem: ");
         fgets(buf, BUFSZ - 1, stdin);
-
-        size_t count;
         
+        /*
+
         if (FD_ISSET(socket_SE, &read_fds)) {
             count = parse_send_message(socket_SE, buf, cid);
             printf("SE\n");
@@ -191,5 +241,10 @@ int main(int argc, char **argv) {
             printf("SCII\n");
             if(count != 0) parse_rcv_message(socket_SCII, cid);
         }
+        */
+
+        toClose = parse_send_message(socket_SE, socket_SCII, buf, cid);
+
+        if(toClose == 1) break;
     }
 }

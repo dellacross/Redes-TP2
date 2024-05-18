@@ -42,21 +42,22 @@
 #define SE_SERVER "SE"
 #define SCII_SERVER "SCII"
 
-int client_count = 0; // Contador de clientes conectados
 int clients[10] = {0};
 
-int generateRandomProduction() {
-    srand(time(NULL));
-    return rand() % (50 - 20 + 1) + 20;
-}
-
-int generateRandomConsumption() {
-    srand(time(NULL));
-    return rand() % 101;
-}
-
-int production = -1, old_production = -1;
+int production = -1;
 int consumption = -1, old_consumption = -1;
+
+void generateRandomProduction() {
+    srand(time(NULL));
+    int aux = rand() % 30 + 20;
+    production = aux;
+}
+
+void generateRandomConsumption() {
+    srand(time(NULL));
+    int aux = rand() % 101;
+    consumption = aux;
+}
 
 void usage(int argc, char **argv) {
     // recebe o tipo de protocolo do servidor e o porto onde ficara esperando
@@ -84,29 +85,34 @@ int checkClient(int id) {
     return clients[id-1] == 1;
 }
 
-void parce_rcv_message(char *buf, struct client_data *cdata) {
+size_t parce_rcv_message(char *buf, struct client_data *cdata) {
     char mss[BUFSZ];
     memset(mss, 0, BUFSZ);
 
+    //printf("msg recebida: %s\n", buf);
     int value1;
+
+    int toClose = 0;
 
     if(strncmp(buf, REQ_ADD, strlen(REQ_ADD)+1) == 0) {
         int client_id = getClientID();
 
-        if(client_id == -1) logexit("client count");
-
-        // Envia a mensagem de resposta com o identificador
-        sprintf(buf, "%s(%d)\n", RES_ADD, client_id);
-        send(cdata->csock, buf, strlen(buf)+1, 0);
-
-        printf("Client %d added\n", client_id);
+        if(client_id == -1) {
+            sprintf(mss, "%s", ERROR01);
+            printf("Client limit exceeded\n");
+            toClose = 1;
+        } else {
+            sprintf(mss, "%s(%d)", RES_ADD, client_id);
+            printf("Client %d added\n", client_id);
+        }
     } else if(strncmp(buf, REQ_REM, strlen(REQ_REM)) == 0) {
         sscanf(buf, "REQ_REM(%d)", &value1);
         if(clients[value1-1] == 0) sprintf(mss, "%s", "ERROR(02)");
         else {
             clients[value1-1] = 0;
             sprintf(mss, "%s", "OK(01)");
-            close(cdata->csock);
+            printf("Servidor Client %d removed\n", value1);
+            toClose = 1;
         }
     } else if(strcmp(buf, REQ_INFOSE) == 0) sprintf(mss, "RES_INFOSE %d", production);
     else if(strcmp(buf, REQ_INFOSCII) == 0) sprintf(mss, "RES_INFOSCII %d", consumption);
@@ -114,31 +120,34 @@ void parce_rcv_message(char *buf, struct client_data *cdata) {
         if(production >= HIGH_PRODUCTION) sprintf(mss, "RES_STATUS %s", "alta");
         else if(production >= MODERATE_PRODUCTION && production < HIGH_PRODUCTION) sprintf(mss, "RES_STATUS %s", "moderada");
         else sprintf(mss, "RES_STATUS %s", "baixa");
+
+        printf("baixa: x >= 20 <= 30\nmoderada: x >= 31 <= 40\nalta: x >= 41\natual: %d\n", production);
+
+        generateRandomProduction();
     } else if(strcmp(buf, REQ_UP) == 0) {
         old_consumption = consumption;
         while(1) {
-            consumption = generateRandomConsumption();
+            generateRandomConsumption();
             if(consumption >= old_consumption) break;
         }
         sprintf(mss, "RES_UP %d %d", old_consumption, consumption);
-        production = generateRandomProduction();
     } else if(strcmp(buf, REQ_NONE) == 0) {
         sprintf(mss, "RES_NONE %d", consumption);
-        production = generateRandomProduction();
     }
     else if(strcmp(buf, REQ_DOWN) == 0) {
         old_consumption = consumption;
         while(1) {
-            consumption = generateRandomConsumption();
+            generateRandomConsumption();
             if(consumption <= old_consumption) break;
         }
         sprintf(mss, "RES_DOWN %d %d", old_consumption, consumption);
-        production = generateRandomProduction();
     }
 
-    printf("enviada pelo servidor: %s\n", mss);
+    //printf("enviada pelo servidor: %s\n", mss);
 
     send(cdata->csock, mss, strlen(mss)+1, 0);
+
+    return toClose;
 }
 
 void *client_thread(void *data) {
@@ -152,13 +161,13 @@ void *client_thread(void *data) {
     char buf[BUFSZ];
 
     while(1) {
-        //leitura da msg do cliente
         memset(buf, 0, BUFSZ);
 
         recv(cdata->csock, buf, BUFSZ-1, 0);
-        printf("msg recebida: %s\n", buf);
 
-        parce_rcv_message(buf, cdata);
+        size_t toClose = parce_rcv_message(buf, cdata);
+
+        if(toClose == 1) break;
     }
 
     close(cdata->csock);
@@ -199,8 +208,8 @@ int main(int argc, char **argv) {
     FD_SET(_socket, &master);
     int fdmax = _socket;
 
-    production = generateRandomProduction();
-    consumption = generateRandomConsumption();
+    generateRandomProduction();
+    generateRandomConsumption();
 
     // tratamento das conexoes pelo while
     while(1) {
@@ -220,25 +229,17 @@ int main(int argc, char **argv) {
         char mss[BUFSZ];
         memset(mss, 0, BUFSZ);
 
-        if(client_count > 10) {
-            sprintf(mss, "%s", ERROR01);
-            printf("%s\n", mss);
-            send(csock, mss, strlen(mss)+1, 0);
-            close(csock);
-        } else {
-            client_count++;
-            struct client_data *cdata = malloc(sizeof(*cdata));
-            
-            cdata->csock = csock;
-            memcpy(&(cdata->storage), &cstorage, sizeof(cstorage)); //copia a estrutura inteira de cstorage para cdata->storage 
+        struct client_data *cdata = malloc(sizeof(*cdata));
+        
+        cdata->csock = csock;
+        memcpy(&(cdata->storage), &cstorage, sizeof(cstorage)); //copia a estrutura inteira de cstorage para cdata->storage 
 
-            // se nao deu erro, deve-se criar uma thread 
-            pthread_t tid;
-            pthread_create(&tid, NULL, client_thread, cdata); // funcao que roda "em paralelo" e permite o servidor "voltar para o while", ou seja, sempre esta pronto para receber o novo cliente      
-           
-            if (csock > fdmax) {
-                fdmax = csock;
-            }                                   
-        }
+        // se nao deu erro, deve-se criar uma thread 
+        pthread_t tid;
+        pthread_create(&tid, NULL, client_thread, cdata); // funcao que roda "em paralelo" e permite o servidor "voltar para o while", ou seja, sempre esta pronto para receber o novo cliente      
+        
+        if (csock > fdmax) {
+            fdmax = csock;
+        }                                   
     }
 }
