@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <time.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -13,13 +14,30 @@
 
 #define BUFSZ 500 //buff size
 
-#define ERROR "ERROR"
-#define OK "OK"
+#define OK01 "OK(01)"
+#define ERROR01 "ERROR(01)"
+#define ERROR02 "ERROR(02)"
+#define KILL "kill"
 #define REQ_ADD "REQ_ADD"
 #define RES_ADD "RES_ADD"
 #define REQ_REM "REQ_REM"
+#define REQ_INFOSE "REQ_INFOSE"
+#define RES_INFOSE "RES_INFOSE"
+#define REQ_INFOSCII "REQ_INFOSCII"
+#define RES_INFOSCII "RES_INFOSCII"
+#define REQ_STATUS "REQ_STATUS"
+#define RES_STATUS "RES_STATUS"
+#define REQ_UP "REQ_UP"
+#define RES_UP "RES_UP"
+#define REQ_NONE "REQ_NONE"
+#define RES_NONE "RES_NONE"
+#define REQ_DOWN "REQ_DOWN"
+#define RES_DOWN "RES_DOWN"
 #define SE_PORT 12345
 #define SCII_PORT 54321
+#define HIGH_PRODUCTION 41
+#define MODERATE_PRODUCTION 31
+#define LOW_PRODUCTION 20
 
 #define SE_SERVER "SE"
 #define SCII_SERVER "SCII"
@@ -27,17 +45,18 @@
 int client_count = 0; // Contador de clientes conectados
 int clients[10] = {0};
 
-int server_id = -1;
-int production = 0;
-int consumption = 0;
+int generateRandomProduction() {
+    srand(time(NULL));
+    return rand() % (50 - 20 + 1) + 20;
+}
 
-typedef struct {
-    int production;
-} SE_server;
+int generateRandomConsumption() {
+    srand(time(NULL));
+    return rand() % 101;
+}
 
-typedef struct {
-    int consumption;
-} SCII_server;
+int production = -1, old_production = -1;
+int consumption = -1, old_consumption = -1;
 
 void usage(int argc, char **argv) {
     // recebe o tipo de protocolo do servidor e o porto onde ficara esperando
@@ -65,6 +84,63 @@ int checkClient(int id) {
     return clients[id-1] == 1;
 }
 
+void parce_rcv_message(char *buf, struct client_data *cdata) {
+    char mss[BUFSZ];
+    memset(mss, 0, BUFSZ);
+
+    int value1;
+
+    if(strncmp(buf, REQ_ADD, strlen(REQ_ADD)+1) == 0) {
+        int client_id = getClientID();
+
+        if(client_id == -1) logexit("client count");
+
+        // Envia a mensagem de resposta com o identificador
+        sprintf(buf, "%s(%d)\n", RES_ADD, client_id);
+        send(cdata->csock, buf, strlen(buf)+1, 0);
+
+        printf("Client %d added\n", client_id);
+    } else if(strncmp(buf, REQ_REM, strlen(REQ_REM)) == 0) {
+        sscanf(buf, "REQ_REM(%d)", &value1);
+        if(clients[value1-1] == 0) sprintf(mss, "%s", "ERROR(02)");
+        else {
+            clients[value1-1] = 0;
+            sprintf(mss, "%s", "OK(01)");
+            close(cdata->csock);
+        }
+    } else if(strcmp(buf, REQ_INFOSE) == 0) sprintf(mss, "RES_INFOSE %d", production);
+    else if(strcmp(buf, REQ_INFOSCII) == 0) sprintf(mss, "RES_INFOSCII %d", consumption);
+    else if(strcmp(buf, REQ_STATUS) == 0) {
+        if(production >= HIGH_PRODUCTION) sprintf(mss, "RES_STATUS %s", "alta");
+        else if(production >= MODERATE_PRODUCTION && production < HIGH_PRODUCTION) sprintf(mss, "RES_STATUS %s", "moderada");
+        else sprintf(mss, "RES_STATUS %s", "baixa");
+    } else if(strcmp(buf, REQ_UP) == 0) {
+        old_consumption = consumption;
+        while(1) {
+            consumption = generateRandomConsumption();
+            if(consumption >= old_consumption) break;
+        }
+        sprintf(mss, "RES_UP %d %d", old_consumption, consumption);
+        production = generateRandomProduction();
+    } else if(strcmp(buf, REQ_NONE) == 0) {
+        sprintf(mss, "RES_NONE %d", consumption);
+        production = generateRandomProduction();
+    }
+    else if(strcmp(buf, REQ_DOWN) == 0) {
+        old_consumption = consumption;
+        while(1) {
+            consumption = generateRandomConsumption();
+            if(consumption <= old_consumption) break;
+        }
+        sprintf(mss, "RES_DOWN %d %d", old_consumption, consumption);
+        production = generateRandomProduction();
+    }
+
+    printf("enviada pelo servidor: %s\n", mss);
+
+    send(cdata->csock, mss, strlen(mss)+1, 0);
+}
+
 void *client_thread(void *data) {
     struct client_data *cdata = (struct client_data *)data;
     struct sockaddr *caddr = (struct sockaddr *)(&cdata->storage);
@@ -73,49 +149,16 @@ void *client_thread(void *data) {
     addrtostr(caddr, caddrstr, BUFSZ);
     printf("[log] connection from %s\n", caddrstr); // printa sempre que o cliente conecta
 
-    char* server_name;
-
-    if(server_id == 0) server_name = SE_SERVER;
-    if(server_id == 1) server_name = SCII_SERVER;
+    char buf[BUFSZ];
 
     while(1) {
         //leitura da msg do cliente
-        char buf[BUFSZ];
         memset(buf, 0, BUFSZ);
 
         recv(cdata->csock, buf, BUFSZ-1, 0);
         printf("msg recebida: %s\n", buf);
-        if(strcmp(buf, REQ_ADD) == 0) {
-            int client_id = getClientID();
 
-            if(client_id == -1) logexit("client count");
-
-            // Envia a mensagem de resposta com o identificador
-            sprintf(buf, "%s(%d)\n", RES_ADD, client_id);
-            send(cdata->csock, buf, strlen(buf)+1, 0);
-
-            printf("Client %d added\n", client_id);
-        } else if(strncmp(buf, REQ_REM, strlen(REQ_REM)) == 0) {
-            int cid;
-            sscanf(buf, "REQ_REM(%d)", &cid);
-
-            if(checkClient(cid) == 1) {
-                clients[cid-1] = 0;
-                printf("Servidor %s Client %d removed\n", server_name, cid);
-                sprintf(buf, "%s(%d) - %s\n", OK, 1, server_name);
-                send(cdata->csock, buf, strlen(buf)+1, 0);
-                printf("msg enviada serv: %s\n", buf);
-                close(cdata->csock);
-                break;
-            } else {
-                sprintf(buf, "%s(%d)\n", ERROR, 2);
-                send(cdata->csock, buf, strlen(buf)+1, 0);
-            }
-        } 
-        else {
-            printf("outra msg");
-            break;
-        }
+        parce_rcv_message(buf, cdata);
     }
 
     close(cdata->csock);
@@ -136,7 +179,7 @@ int main(int argc, char **argv) {
 
     // reutilizacao de porto mesmo se ja estiver sendo utilizado
     int enable = 1;
-    if(setsockopt(_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) != 0) logexit("setsockopt"); 
+    if(setsockopt(_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &enable, sizeof(int)) != 0) logexit("setsockopt"); 
 
     //o servidor nao da connect, mas sim, bind() (depois o listen e depois o accept)
 
@@ -151,14 +194,13 @@ int main(int argc, char **argv) {
     addrtostr(addr, addrstr, BUFSZ);
     printf("bound to %s, waiting connections\n", addrstr);
 
-    if(atoi(argv[2]) == SE_PORT) server_id = 0;
-    if(atoi(argv[2]) == SCII_PORT) server_id = 1;
-    if(server_id < 0 || server_id > 1) logexit("set server type");
-
     fd_set master;
     FD_ZERO(&master);
     FD_SET(_socket, &master);
     int fdmax = _socket;
+
+    production = generateRandomProduction();
+    consumption = generateRandomConsumption();
 
     // tratamento das conexoes pelo while
     while(1) {
@@ -179,13 +221,12 @@ int main(int argc, char **argv) {
         memset(mss, 0, BUFSZ);
 
         if(client_count > 10) {
-            sprintf(mss, "%s(0%d)\n", ERROR, 1);
+            sprintf(mss, "%s", ERROR01);
             printf("%s\n", mss);
             send(csock, mss, strlen(mss)+1, 0);
             close(csock);
         } else {
-            send(csock, "ok", strlen("ok")+1, 0);
-
+            client_count++;
             struct client_data *cdata = malloc(sizeof(*cdata));
             
             cdata->csock = csock;
@@ -194,8 +235,7 @@ int main(int argc, char **argv) {
             // se nao deu erro, deve-se criar uma thread 
             pthread_t tid;
             pthread_create(&tid, NULL, client_thread, cdata); // funcao que roda "em paralelo" e permite o servidor "voltar para o while", ou seja, sempre esta pronto para receber o novo cliente      
-
-            client_count++;
+           
             if (csock > fdmax) {
                 fdmax = csock;
             }                                   

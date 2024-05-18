@@ -8,123 +8,188 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/select.h>
 
-#define BUFSZ 500 //buff size
+#define BUFSZ 500 // buffer size
 
-#define ERROR01 "Client limit exceeded"
-#define OK01 "Successful disconnect"
+#define ERROR01 "ERROR(01)"
+#define ERROR02 "ERROR(02)"
+#define OK01 "OK(01)"
+#define KILL "kill"
 #define REQ_ADD "REQ_ADD"
 #define RES_ADD "RES_ADD"
+#define RES_REM "REQ_REM"
+#define REQ_INFOSE "REQ_INFOSE"
+#define RES_INFOSE "RES_INFOSE"
+#define REQ_INFOSCII "REQ_INFOSCII"
+#define RES_INFOSCII "RES_INFOSCII"
+#define REQ_STATUS "REQ_STATUS"
+#define RES_STATUS "RES_STATUS"
+#define REQ_UP "REQ_UP"
+#define RES_UP "RES_UP"
+#define REQ_NONE "REQ_NONE"
+#define RES_NONE "RES_NONE"
+#define REQ_DOWN "REQ_DOWN"
+#define RES_DOWN "RES_DOWN"
+#define HIGH_PRODUCTION 41
+#define MODERATE_PRODUCTION 31
+#define LOW_PRODUCTION 20
 
 void usage(int argc, char **argv) {
-    printf("usage: %s <server IP> <server port>\n", argv[0]);
-    printf("example: %s 127.0.0.1 51551\n", argv[0]);
+    printf("usage: %s <server IP> <SE port> <SCII port>\n", argv[0]);
+    printf("example: %s 127.0.0.1 12345 54321\n", argv[0]);
+    printf("argc: %d\n", argc);
     exit(EXIT_FAILURE);
 }
 
-int initialConnection(int _socket, int sid) {
-    char msg[BUFSZ];
+int initialConnection(int _socket) {
+    char buf[BUFSZ];
+    memset(buf, 0, BUFSZ);
     size_t count;
     int cid;
-    count = send(_socket, REQ_ADD, strlen(REQ_ADD)+1, 0);
 
-    if(count != 0) {
-        recv(_socket, msg, BUFSZ, 0);
+    count = send(_socket, REQ_ADD, strlen(REQ_ADD) + 1, 0);
 
-        sscanf(msg, "RES_ADD(%d)", &cid);
-
-        if(sid == 0) printf("Servidor SE new ID: %d\n", cid);
-        if(sid == 1) printf("Servidor SCII new ID: %d\n", cid);
+    if (count != 0) {
+        recv(_socket, buf, BUFSZ, 0);
+        if(strcmp(buf, ERROR01) == 0) {
+            printf("Client limit exceeded\n");
+            close(_socket);
+            return -1;
+        } else {
+            sscanf(buf, "RES_ADD(%d)", &cid);
+            printf("Servidor new ID: %d\n", cid);
+        }
     }
 
     return cid;
 }
 
-void handleComunication(int _socket, char* mss, int id) {
+size_t parse_send_message(int _socket, char* buf, int cid) {
+    char mss[BUFSZ];
+    memset(mss, 0, BUFSZ);
     size_t count;
-    count = send(_socket, mss, strlen(mss)+1, 0);
-    printf("id: %d\n", id);
-    char res[BUFSZ];
-    memset(res, 0, BUFSZ);
-    if(count != 0) {
-        recv(_socket, res, BUFSZ, 0);
-        printf("return: %s\n", res);
+
+    printf("buf: %s\n", buf);
+
+    if(strcmp(buf, KILL) == 0) sprintf(mss, "REQ_REM(%d)", cid);
+    else if(strncmp(buf, "display info se", strlen("display info sce")) == 0) sprintf(mss, "%s", REQ_INFOSE);
+    else if(strncmp(buf, "display info scii", strlen("display info scii")) == 0) sprintf(mss, "%s", REQ_INFOSCII);
+    else if(strncmp(buf, "query condition", strlen("query condition")) == 0) sprintf(mss, "%s", REQ_STATUS);
+    else if(strncmp(buf, REQ_UP, strlen(REQ_UP)) == 0) sprintf(mss, "%s", REQ_UP);
+    else if(strncmp(buf, REQ_NONE, strlen(REQ_NONE)) == 0) sprintf(mss, "%s", REQ_NONE);
+    else if(strncmp(buf, REQ_DOWN, strlen(REQ_DOWN)) == 0) sprintf(mss, "%s", REQ_DOWN);
+    else printf("send outra msg\n");
+
+    printf("mss: %s\n", mss);
+    count = send(_socket, mss, strlen(mss) + 1, 0);
+
+    return count;
+}
+
+void parse_rcv_message(int _socket, int cid) {
+    char buf[BUFSZ];
+    char mss[BUFSZ];
+    memset(buf, 0, BUFSZ);
+    memset(mss, 0, BUFSZ);
+
+    int value1, value2;
+    char word1[BUFSZ];
+    size_t count = recv(_socket, buf, BUFSZ, 0);
+
+    printf("buf: %s - %ld\n", buf, count);
+
+    if(strncmp(buf, RES_INFOSE, strlen(RES_INFOSE)) == 0) {
+        sscanf(buf, "RES_INFOSE %d", &value1);
+        sprintf(mss, "Producao atual: %d", value1);
+        printf("%s\n", mss);
+    } else if(strncmp(buf, RES_INFOSCII, strlen(RES_INFOSCII)) == 0) {
+        sscanf(buf, "RES_INFOSCII %d", &value1);
+        sprintf(mss, "Consumo atual: %d", value1);
+        printf("%s\n", mss);
+    } else if(strncmp(buf, RES_STATUS, strlen(RES_STATUS)) == 0) {
+        sscanf(buf, "RES_STATUS %s", word1);
+
+        if(strcmp(word1, "alta") == 0) {
+            sprintf(mss, "%s", REQ_UP);
+            count = parse_send_message(_socket, mss, cid);
+            if(count != 0) parse_rcv_message(_socket, cid);
+            else {
+                logexit("alta");
+                close(_socket);
+            }
+        }
+    } else if(strncmp(buf, RES_UP, strlen(RES_UP)) == 0) {
+        sscanf(buf, "RES_UP %d %d", &value1, &value2);
+        sprintf(mss, "Consumo antigo: %d", value1);
+        printf("%s\n", mss);
+        memset(mss, 0, BUFSZ);
+        sprintf(mss, "Consumo atual: %d", value2);
+        printf("%s\n", mss);
+    } else if(strncmp(buf, RES_NONE, strlen(RES_NONE)) == 0) {
+        sscanf(buf, "RES_NONE %d", &value1);
+        sprintf(mss, "Consumo antigo: %d", value1);
+        printf("%s\n", mss);
+    } else if(strncmp(buf, RES_DOWN, strlen(RES_DOWN)) == 0) {
+        sscanf(buf, "DOWN %d %d", &value1, &value2);
+        sprintf(mss, "Consumo antigo: %d", value1);
+        printf("%s\n", mss);
+        memset(mss, 0, BUFSZ);
+        sprintf(mss, "Consumo atual: %d", value2);
+        printf("%s\n", mss);
+    } else {
+        printf("rcv outra msg\n");
     }
 }
 
 int main(int argc, char **argv) {
-    if (argc < 4) usage(argc, argv);
+    if (argc < 3) usage(argc, argv);
 
-    // Connect to first server
-    struct sockaddr_storage storage1;
-    if(addrparse(argv[1], argv[2], &storage1) != 0) usage(argc, argv);
+    // Connect to SE server
+    struct sockaddr_storage storage_SE, storage_SCII;
+    if (addrparse(argv[1], argv[2], &storage_SE) != 0) usage(argc, argv);
+    int socket_SE = socket(storage_SE.ss_family, SOCK_STREAM, 0);
+    struct sockaddr *addr_SE = (struct sockaddr *)(&storage_SE);
+    if (connect(socket_SE, addr_SE, sizeof(storage_SE)) != 0) logexit("connect");
 
-    int _socket1;
-    _socket1 = socket(storage1.ss_family, SOCK_STREAM, 0);
-    if(_socket1 == -1) logexit("socket");
+    // Connect to SCII server
+    if (addrparse(argv[1], argv[3], &storage_SCII) != 0) usage(argc, argv);
+    int socket_SCII = socket(storage_SCII.ss_family, SOCK_STREAM, 0);
+    struct sockaddr *addr_SCII = (struct sockaddr *)(&storage_SCII);
+    if (connect(socket_SCII, addr_SCII, sizeof(storage_SCII)) != 0) logexit("connect");
 
-    struct sockaddr *addr1 = (struct sockaddr *)(&storage1);
+    fd_set read_fds;
+    int cid;
+    cid = initialConnection(socket_SE);
+    if(cid != -1) cid = initialConnection(socket_SCII);
 
-    if(connect(_socket1, addr1, sizeof(storage1)) != 0) logexit("connect");
+    while (cid != -1) {
+        FD_ZERO(&read_fds);
+        FD_SET(socket_SE, &read_fds);
+        FD_SET(socket_SCII, &read_fds);
+        printf("socket_SE: %d | socket_SCII: %d\n", socket_SE, socket_SCII);
+        int max_fd = socket_SE > socket_SCII ? socket_SE : socket_SCII;
+        printf("max_fd: %d\n", max_fd);
 
-    // Connect to second server
-    struct sockaddr_storage storage2;
-    if(addrparse(argv[1], argv[3], &storage2) != 0) usage(argc, argv);
+        select(max_fd + 1, &read_fds, NULL, NULL, NULL);
 
-    int _socket2;
-    _socket2 = socket(storage2.ss_family, SOCK_STREAM, 0);
-    if(_socket2 == -1) logexit("socket");
+        char buf[BUFSZ];
+        memset(buf, 0, BUFSZ);
 
-    struct sockaddr *addr2 = (struct sockaddr *)(&storage2);
+        printf("mensagem: ");
+        fgets(buf, BUFSZ - 1, stdin);
 
-    if(connect(_socket2, addr2, sizeof(storage2)) != 0) logexit("connect");
-
-    char buf[BUFSZ];
-    char mss[BUFSZ];
-
-    recv(_socket1, buf, BUFSZ, 0);
-
-    if(strncmp(buf, ERROR01, strlen(ERROR01)+1) == 0) {
-        printf("%s", ERROR01);
-    } else {
-        char addrstr1[BUFSZ];
-        char addrstr2[BUFSZ];
-        addrtostr(addr1, addrstr1, BUFSZ);
-        addrtostr(addr2, addrstr2, BUFSZ);
-        printf("conntected to %s\n", addrstr1);
-        printf("conntected to %s\n", addrstr2);
-
-        int cid;
-
-        cid = initialConnection(_socket1, 0);
-        cid = initialConnection(_socket2, 1);
-
-        while(1) {
-            memset(buf, 0, BUFSZ); //inicializa o buffer como 0
-            memset(mss, 0, BUFSZ);
-
-            printf("mensagem: ");
-            fgets(buf, BUFSZ-1, stdin); //le do teclado o que o user vai digitar
-
-            int msgID = -1; // identificador para indicar para qual servidor a msg deve ser enviada
-
-            if(strncmp(buf, "kill", strlen("kill")) == 0) {
-                sprintf(mss, "REQ_REM(%d)", cid);
-                msgID = 2;
-            } else {
-                printf("outra msg\n");
-                break;
-            }
-
-            printf("msg enviada: %s\n", mss);
-
-            if(msgID == 0 || msgID == 2) handleComunication(_socket1, mss, 1);
-            if(msgID == 1 || msgID == 2) handleComunication(_socket2, mss, 2);
-
-            memset(mss, 0, BUFSZ); //inicializa o buffer como 0
+        size_t count;
+        
+        if (FD_ISSET(socket_SE, &read_fds)) {
+            count = parse_send_message(socket_SE, buf, cid);
+            printf("SE\n");
+            if(count != 0) parse_rcv_message(socket_SE, cid);
+        }
+        if (FD_ISSET(socket_SCII, &read_fds)) {
+            count = parse_send_message(socket_SCII, buf, cid);
+            printf("SCII\n");
+            if(count != 0) parse_rcv_message(socket_SCII, cid);
         }
     }
-
-    close(_socket1);
-    close(_socket2);
 }
