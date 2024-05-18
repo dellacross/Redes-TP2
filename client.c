@@ -216,33 +216,11 @@ int main(int argc, char **argv) {
     int toClose = 0;
 
     while (cid != -1) {
-        /*
-        FD_ZERO(&read_fds);
-        FD_SET(socket_SE, &read_fds);
-        FD_SET(socket_SCII, &read_fds);
-        int max_fd = socket_SE > socket_SCII ? socket_SE : socket_SCII;
-
-        select(max_fd + 1, &read_fds, NULL, NULL, NULL);
-        */
-
         char buf[BUFSZ];
         memset(buf, 0, BUFSZ);
 
         printf("mensagem: ");
         fgets(buf, BUFSZ - 1, stdin);
-        
-        /*
-        if (FD_ISSET(socket_SE, &read_fds)) {
-            count = parse_send_message(socket_SE, buf, cid);
-            printf("SE\n");
-            if(count != 0) parse_rcv_message(socket_SE, cid);
-        }
-        if (FD_ISSET(socket_SCII, &read_fds)) {
-            count = parse_send_message(socket_SCII, buf, cid);
-            printf("SCII\n");
-            if(count != 0) parse_rcv_message(socket_SCII, cid);
-        }
-        */
 
         toClose = parse_send_message(socket_SE, socket_SCII, buf, cid);
 
