@@ -50,13 +50,13 @@ int consumption = -1, old_consumption = -1;
 
 void generateRandomProduction() {
     srand(time(NULL));
-    int aux = rand() % 30 + 20;
+    int aux = (rand() % 30) + 20;
     production = aux;
 }
 
-void generateRandomConsumption() {
+void generateRandomConsumption(int min, int max) {
     srand(time(NULL));
-    int aux = rand() % 101;
+    int aux = (rand() % max) + min;
     consumption = aux;
 }
 
@@ -127,22 +127,23 @@ size_t parce_rcv_message(char *buf, struct client_data *cdata) {
         printf("baixa: x >= 20 <= 30\nmoderada: x >= 31 <= 40\nalta: x >= 41\natual: %d\n", production);
 
         generateRandomProduction();
+
+        printf("nova producao: %d\n", production);
     } else if(strcmp(buf, REQ_UP) == 0) {
         old_consumption = consumption;
-        while(1) {
-            generateRandomConsumption();
-            if(consumption >= old_consumption) break;
-        }
+        printf("alta old: %d\n", old_consumption);
+        generateRandomConsumption(old_consumption, 100);
+        printf("alta new: %d\n", consumption);
         sprintf(mss, "RES_UP %d %d", old_consumption, consumption);
     } else if(strcmp(buf, REQ_NONE) == 0) {
         sprintf(mss, "RES_NONE %d", consumption);
+        printf("moderada\n");
     }
     else if(strcmp(buf, REQ_DOWN) == 0) {
         old_consumption = consumption;
-        while(1) {
-            generateRandomConsumption();
-            if(consumption <= old_consumption) break;
-        }
+        printf("baixa old: %d\n", old_consumption);
+        generateRandomConsumption(0, old_consumption);
+        printf("baixa new: %d\n", consumption);
         sprintf(mss, "RES_DOWN %d %d", old_consumption, consumption);
     }
 
@@ -206,27 +207,15 @@ int main(int argc, char **argv) {
     addrtostr(addr, addrstr, BUFSZ);
     printf("bound to %s, waiting connections\n", addrstr);
 
-    fd_set master;
-    FD_ZERO(&master);
-    FD_SET(_socket, &master);
-    int fdmax = _socket;
-
     generateRandomProduction();
-    generateRandomConsumption();
+    generateRandomConsumption(0, 100);
 
     // tratamento das conexoes pelo while
     while(1) {
-        fd_set read_fds = master;
-        if(select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
-            perror("select");
-            exit(EXIT_FAILURE);
-        }
-
         struct sockaddr_storage cstorage; //client storage
         struct sockaddr *caddr = (struct sockaddr *)(&cstorage);
         socklen_t caddrlen = sizeof(cstorage); 
 
-        // Verifica se a quantidade máxima de conexões foi alcançada
         int csock = accept(_socket, caddr, &caddrlen); // retorna um novo socket (client socket)
                                                     // dá accept no _socket e cria um outro socket para falar com o cliente (socket que recebe conexao e que conversa com o cliente)  
         char mss[BUFSZ];
@@ -240,10 +229,6 @@ int main(int argc, char **argv) {
 
         // se nao deu erro, deve-se criar uma thread 
         pthread_t tid;
-        pthread_create(&tid, NULL, client_thread, cdata); // funcao que roda "em paralelo" e permite o servidor "voltar para o while", ou seja, sempre esta pronto para receber o novo cliente      
-        
-        if (csock > fdmax) {
-            fdmax = csock;
-        }                                   
+        pthread_create(&tid, NULL, client_thread, cdata); // funcao que roda "em paralelo" e permite o servidor "voltar para o while", ou seja, sempre esta pronto para receber o novo cliente                                    
     }
 }

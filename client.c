@@ -210,7 +210,6 @@ int main(int argc, char **argv) {
     struct sockaddr *addr_SCII = (struct sockaddr *)(&storage_SCII);
     if (connect(socket_SCII, addr_SCII, sizeof(storage_SCII)) != 0) logexit("connect");
 
-    //fd_set read_fds;
     int cid = initialConnection(socket_SE, socket_SCII);
 
     int toClose = 0;
