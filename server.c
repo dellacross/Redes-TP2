@@ -48,6 +48,8 @@ int clients[10] = {0};
 int production = -1;
 int consumption = -1, old_consumption = -1;
 
+char servername[BUFSZ];
+
 void generateRandomProduction() {
     srand(time(NULL));
     int aux = (rand() % 30) + 20;
@@ -97,16 +99,9 @@ size_t parce_rcv_message(char *buf, struct client_data *cdata) {
 
     if(strncmp(buf, REQ_ADD, strlen(REQ_ADD)+1) == 0) {
         int client_id = getClientID();
-
-        if(client_id == -1) {
-            sprintf(mss, "%s", ERROR01);
-            printf("Client limit exceeded\n");
-            toClose = 1;
-        } else {
-            sprintf(mss, "%s(%d)", RES_ADD, client_id);
-            printf("Client %d added\n", client_id);
-        }
-
+        //printf("client_id: %d\n", client_id);
+        sprintf(mss, "%s(%d)", RES_ADD, client_id);
+        printf("Client %d added\n", client_id);
     } else if(strncmp(buf, REQ_REM, strlen(REQ_REM)) == 0) {
         sscanf(buf, "REQ_REM(%d)", &value1);
         if(clients[value1-1] == 0) sprintf(mss, "%s", "ERROR(02)");
@@ -114,7 +109,9 @@ size_t parce_rcv_message(char *buf, struct client_data *cdata) {
             clients[value1-1] = 0;
             client_count--;
             sprintf(mss, "%s", "OK(01)");
-            printf("Servidor Client %d removed\n", value1);
+
+            printf("Servidor %s Client %d removed\n", servername, value1);
+            //printf("client count: %d\n", client_count);
             toClose = 1;
         }
     } else if(strcmp(buf, REQ_INFOSE) == 0) sprintf(mss, "RES_INFOSE %d", production);
@@ -124,7 +121,7 @@ size_t parce_rcv_message(char *buf, struct client_data *cdata) {
         else if(production >= MODERATE_PRODUCTION && production < HIGH_PRODUCTION) sprintf(mss, "RES_STATUS %s", "moderada");
         else sprintf(mss, "RES_STATUS %s", "baixa");
 
-        printf("baixa: x >= 20 <= 30\nmoderada: x >= 31 <= 40\nalta: x >= 41\natual: %d\n", production);
+        printf("baixa: 20 <= x <= 30\nmoderada: 31 <= x <= 40\nalta: x >= 41\natual: %d\n", production);
 
         generateRandomProduction();
 
@@ -164,12 +161,28 @@ void *client_thread(void *data) {
 
     char buf[BUFSZ];
 
-    while(1) {
+    int accept = 1;
+
+    if(client_count > 10) {
+        send(cdata->csock, ERROR01, strlen(ERROR01)+1, 0);
+        printf("Client limit exceeded\n");
+        accept = -1;
+    } else {
+        client_count++;
+        //printf("client count: %d\n", client_count);
+        send(cdata->csock, "ok", strlen("ok")+1, 0);
+        memset(buf, 0, BUFSZ);
+        recv(cdata->csock, buf, BUFSZ-1, 0);
+        accept = parce_rcv_message(buf, cdata);
+        accept = 1;
+    }
+
+    while(accept) {
         memset(buf, 0, BUFSZ);
 
         recv(cdata->csock, buf, BUFSZ-1, 0);
 
-        size_t toClose = parce_rcv_message(buf, cdata);
+        int toClose = parce_rcv_message(buf, cdata);
 
         if(toClose == 1) break;
     }
@@ -210,6 +223,11 @@ int main(int argc, char **argv) {
     generateRandomProduction();
     generateRandomConsumption(0, 100);
 
+    memset(servername, 0, BUFSZ);
+
+    if(strncmp(argv[2], "12345", strlen("12345")) == 0) sprintf(servername, "%s", SE_SERVER);
+    else sprintf(servername, "%s", SCII_SERVER);
+
     // tratamento das conexoes pelo while
     while(1) {
         struct sockaddr_storage cstorage; //client storage
@@ -221,7 +239,6 @@ int main(int argc, char **argv) {
         char mss[BUFSZ];
         memset(mss, 0, BUFSZ);
 
-        printf("client count: %d\n", client_count);
         struct client_data *cdata = malloc(sizeof(*cdata));
         
         cdata->csock = csock;

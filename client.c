@@ -46,27 +46,28 @@ int initialConnection(int _socketSE, int _socketSCII) {
     char buf[BUFSZ];
     memset(buf, 0, BUFSZ);
     int cid = -1;
-
-    send(_socketSE, REQ_ADD, strlen(REQ_ADD) + 1, 0);
+    
     recv(_socketSE, buf, BUFSZ, 0);
+    recv(_socketSCII, buf, BUFSZ, 0);
+
+    //printf("rcv: %s\n", buf);
 
     if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
         printf("Client limit exceeded\n");
         return -1;
     } else {
+        send(_socketSE, REQ_ADD, strlen(REQ_ADD) + 1, 0);
+        recv(_socketSE, buf, BUFSZ, 0);
+
         sscanf(buf, "RES_ADD(%d)", &cid);
         printf("Servidor SE new ID: %d\n", cid);
+
+        memset(buf, 0, BUFSZ);
+
+        send(_socketSCII, REQ_ADD, strlen(REQ_ADD) + 1, 0);
+        recv(_socketSCII, buf, BUFSZ, 0);
+        printf("Servidor SCII new ID: %d\n", cid);
     }
-
-    memset(buf, 0, BUFSZ);
-
-    send(_socketSCII, REQ_ADD, strlen(REQ_ADD) + 1, 0);
-    recv(_socketSCII, buf, BUFSZ, 0);
-
-    if(strncmp(buf, ERROR01, strlen(ERROR01)) == 0) {
-        printf("Client limit exceeded\n");
-        return -1;
-    } else printf("Servidor SCII new ID: %d\n", cid);
 
     return cid;
 }
@@ -170,7 +171,7 @@ int parse_send_message(int _socketSE, int _socketSCII, char* buf, int cid) {
     else if(strncmp(buf, REQ_DOWN, strlen(REQ_DOWN)) == 0) {
         sprintf(mss, "%s", REQ_DOWN);
         sid = 1;
-    }
+    } else printf("Mensagem inválida. Digite novamente.\n");
 
     //printf("mss: %s - %d\n", mss, sid);
 
