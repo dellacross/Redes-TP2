@@ -58,7 +58,7 @@ void generateRandomProduction() {
 
 void generateRandomConsumption(int min, int max) {
     srand(time(NULL));
-    int aux = (rand() % max) + min;
+    int aux = (rand() % (max-min+1)) + min;
     consumption = aux;
 }
 
@@ -84,11 +84,7 @@ int getClientID() {
     return -1;
 }
 
-int checkClient(int id) {
-    return clients[id-1] == 1;
-}
-
-size_t parce_rcv_message(char *buf, struct client_data *cdata) {
+int parse_rcv_message(char *buf, struct client_data *cdata) {
     char mss[BUFSZ];
     memset(mss, 0, BUFSZ);
 
@@ -173,7 +169,7 @@ void *client_thread(void *data) {
         send(cdata->csock, "ok", strlen("ok")+1, 0);
         memset(buf, 0, BUFSZ);
         recv(cdata->csock, buf, BUFSZ-1, 0);
-        accept = parce_rcv_message(buf, cdata);
+        accept = parse_rcv_message(buf, cdata);
         accept = 1;
     }
 
@@ -182,7 +178,7 @@ void *client_thread(void *data) {
 
         recv(cdata->csock, buf, BUFSZ-1, 0);
 
-        int toClose = parce_rcv_message(buf, cdata);
+        int toClose = parse_rcv_message(buf, cdata);
 
         if(toClose == 1) break;
     }
