@@ -87,11 +87,11 @@ int parse_rcv_message(char* buf, int _socketSCII, int cid) {
 
     if(strncmp(buf, RES_INFOSE, strlen(RES_INFOSE)) == 0) {
         sscanf(buf, "RES_INFOSE %d", &value1);
-        sprintf(mss, "Producao atual: %d", value1);
+        sprintf(mss, "Producao atual: %d mHz", value1);
         printf("%s\n", mss);
     } else if(strncmp(buf, RES_INFOSCII, strlen(RES_INFOSCII)) == 0) {
         sscanf(buf, "RES_INFOSCII %d", &value1);
-        sprintf(mss, "Consumo atual: %d", value1);
+        sprintf(mss, "Consumo atual: %d%s", value1, "%");
         printf("%s\n", mss);
     } else if(strncmp(buf, RES_STATUS, strlen(RES_STATUS)) == 0) {
         sscanf(buf, "RES_STATUS %s", word1);
@@ -105,21 +105,21 @@ int parse_rcv_message(char* buf, int _socketSCII, int cid) {
         parse_send_message(0, _socketSCII, mss, cid);
     } else if(strncmp(buf, RES_UP, strlen(RES_UP)) == 0) {
         sscanf(buf, "RES_UP %d %d", &value1, &value2);
-        sprintf(mss, "Consumo antigo: %d", value1);
+        sprintf(mss, "Consumo antigo: %d%s", value1, "%");
         printf("%s\n", mss);
         memset(mss, 0, BUFSZ);
-        sprintf(mss, "Consumo atual: %d", value2);
+        sprintf(mss, "Consumo atual: %d%s", value2, "%");
         printf("%s\n", mss);
     } else if(strncmp(buf, RES_NONE, strlen(RES_NONE)) == 0) {
         sscanf(buf, "RES_NONE %d", &value1);
-        sprintf(mss, "Consumo antigo: %d", value1);
+        sprintf(mss, "Consumo antigo: %d%s", value1, "%");
         printf("%s\n", mss);
     } else if(strncmp(buf, RES_DOWN, strlen(RES_DOWN)) == 0) {
         sscanf(buf, "RES_DOWN %d %d", &value1, &value2);
-        sprintf(mss, "Consumo antigo: %d", value1);
+        sprintf(mss, "Consumo antigo: %d%s", value1, "%");
         printf("%s\n", mss);
         memset(mss, 0, BUFSZ);
-        sprintf(mss, "Consumo atual: %d", value2);
+        sprintf(mss, "Consumo atual: %d%s", value2, "%");
         printf("%s\n", mss);
     } else if(strncmp(buf, OK01, strlen(OK01)) == 0) {
         toClose = 1;
