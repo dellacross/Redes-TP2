@@ -159,7 +159,7 @@ void *client_thread(void *data) {
 
     int accept = 1;
 
-    if(client_count > 10) {
+    if(client_count >= 10) {
         send(cdata->csock, ERROR01, strlen(ERROR01)+1, 0);
         printf("Client limit exceeded\n");
         accept = -1;
@@ -173,7 +173,7 @@ void *client_thread(void *data) {
         accept = 1;
     }
 
-    while(accept) {
+    while(accept == 1) {
         memset(buf, 0, BUFSZ);
 
         recv(cdata->csock, buf, BUFSZ-1, 0);

@@ -226,4 +226,7 @@ int main(int argc, char **argv) {
 
         if(toClose == 1) break;
     }
+
+    close(socket_SE);
+    close(socket_SCII);
 }
